@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
 type SoundId = "river" | "forest" | "fire";
@@ -154,27 +154,28 @@ const GENERATORS: Record<SoundId, (ctx: AudioContext) => AudioNode> = {
 /* ── Component ───────────────────────────────────────────────────────── */
 
 export default function AmbientSound() {
-  const [active, setActive] = useState<SoundId | null>(null);
+  const [active, setActive] = useState<SoundId | null>("forest");
   const [open, setOpen] = useState(false);
   const ctxRef = useRef<AudioContext | null>(null);
   const nodeRef = useRef<AudioNode | null>(null);
   const masterRef = useRef<GainNode | null>(null);
+  const hasStartedDefaultRef = useRef(false);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => { ctxRef.current?.close(); };
   }, []);
 
-  const stop = () => {
+  const stop = useCallback(() => {
     if (masterRef.current && ctxRef.current) {
       masterRef.current.gain.linearRampToValueAtTime(0, ctxRef.current.currentTime + 0.4);
       setTimeout(() => {
         nodeRef.current = null;
       }, 500);
     }
-  };
+  }, []);
 
-  const play = (id: SoundId) => {
+  const play = useCallback((id: SoundId) => {
     if (!ctxRef.current) {
       ctxRef.current = new AudioContext();
     }
@@ -193,7 +194,7 @@ export default function AmbientSound() {
     nodeRef.current = node;
 
     master.gain.linearRampToValueAtTime(1, ctx.currentTime + 0.8);
-  };
+  }, [stop]);
 
   const toggle = (id: SoundId) => {
     if (active === id) {
@@ -204,6 +205,27 @@ export default function AmbientSound() {
       setActive(id);
     }
   };
+
+  useEffect(() => {
+    if (!active || hasStartedDefaultRef.current) return;
+
+    hasStartedDefaultRef.current = true;
+    play(active);
+
+    const resumeAudio = () => {
+      if (ctxRef.current?.state === "suspended") {
+        ctxRef.current.resume();
+      }
+    };
+
+    window.addEventListener("pointerdown", resumeAudio, { once: true });
+    window.addEventListener("keydown", resumeAudio, { once: true });
+
+    return () => {
+      window.removeEventListener("pointerdown", resumeAudio);
+      window.removeEventListener("keydown", resumeAudio);
+    };
+  }, [active, play]);
 
   return (
     <div className="fixed bottom-24 left-5 z-50 flex flex-col-reverse items-start gap-2">
